@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use solana_sdk::{
-    hash::Hash,
-    message::VersionedMessage,
-    pubkey::Pubkey,
-    signature::{keypair_from_seed, Keypair, Signature},
-    signer::Signer,
+    hash::Hash, message::VersionedMessage, pubkey::Pubkey, signature::Signature, signer::Signer,
     transaction::VersionedTransaction,
 };
+
+#[cfg(feature = "fireblocks")]
+use fireblocks_solana_signer::{keypair_from_seed, FireblocksSigner as Keypair};
+#[cfg(not(feature = "fireblocks"))]
+use solana_sdk::signature::{keypair_from_seed, Keypair};
 
 use crate::{
     constants::{self},
@@ -218,8 +219,25 @@ impl Wallet {
     }
 }
 
+#[cfg(not(feature = "fireblocks"))]
 impl From<Keypair> for Wallet {
     fn from(value: Keypair) -> Self {
+        Self::new(value)
+    }
+}
+
+#[cfg(feature = "fireblocks")]
+impl From<solana_sdk::signature::Keypair> for Wallet {
+    fn from(value: solana_sdk::signature::Keypair) -> Self {
+        // Convert solana Keypair to FireblocksSigner
+        let fireblocks_signer = fireblocks_solana_signer::FireblocksSigner::new_with_keypair(value);
+        Self::new(fireblocks_signer)
+    }
+}
+
+#[cfg(feature = "fireblocks")]
+impl From<fireblocks_solana_signer::FireblocksSigner> for Wallet {
+    fn from(value: fireblocks_solana_signer::FireblocksSigner) -> Self {
         Self::new(value)
     }
 }

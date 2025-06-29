@@ -1,17 +1,36 @@
 use std::time::Duration;
 
-use anchor_lang::Discriminator;
 use drift_rs::{
-    constants::DEFAULT_PUBKEY,
     event_subscriber::RpcClient,
-    grpc::grpc_subscriber::AccountFilter,
     math::constants::{BASE_PRECISION_I64, LAMPORTS_PER_SOL_I64, PRICE_PRECISION_U64},
     types::{accounts::User, Context, MarketId, NewOrder, PostOnlyParam, SettlePnlMode},
     utils::test_envs::{devnet_endpoint, mainnet_endpoint, test_keypair},
-    DriftClient, GrpcSubscribeOpts, Pubkey, TransactionBuilder, Wallet,
+    DriftClient, TransactionBuilder, Wallet,
 };
+#[cfg(feature = "fireblocks")]
+use fireblocks_solana_signer::FireblocksSigner as Keypair;
 use futures_util::StreamExt;
-use solana_sdk::{clock::Slot, signature::Keypair};
+#[cfg(not(feature = "fireblocks"))]
+use solana_sdk::signature::Keypair;
+
+#[cfg(test)]
+mod log_utils {
+    use {
+        std::sync::Once,
+        tracing_subscriber::{fmt::format::FmtSpan, EnvFilter},
+    };
+    pub static INIT: Once = Once::new();
+    pub fn setup() {
+        INIT.call_once(|| {
+            tracing_subscriber::fmt()
+                // .with_target(true)
+                .with_level(true)
+                .with_span_events(FmtSpan::CLOSE)
+                .with_env_filter(EnvFilter::from_default_env())
+                .init();
+        });
+    }
+}
 
 #[tokio::test]
 async fn client_sync_subscribe_all_devnet() {
@@ -38,7 +57,7 @@ async fn client_sync_subscribe_all_devnet() {
 
 #[tokio::test]
 async fn client_sync_subscribe_devnet() {
-    let _ = env_logger::try_init();
+    log_utils::setup();
     let client = DriftClient::new(
         Context::DevNet,
         RpcClient::new(devnet_endpoint()),
@@ -69,7 +88,7 @@ async fn client_sync_subscribe_devnet() {
 
 #[tokio::test]
 async fn client_sync_subscribe_mainnet() {
-    let _ = env_logger::try_init();
+    log_utils::setup();
     let client = DriftClient::new(
         Context::MainNet,
         RpcClient::new(mainnet_endpoint()),
@@ -103,9 +122,16 @@ async fn client_sync_subscribe_mainnet() {
     dbg!(price);
 }
 
+#[cfg(not(feature = "fireblocks"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 5)]
 async fn client_sync_subscribe_mainnet_grpc() {
-    let _ = env_logger::try_init();
+    use anchor_lang::Discriminator;
+    use drift_rs::{
+        constants::DEFAULT_PUBKEY, grpc::grpc_subscriber::AccountFilter, GrpcSubscribeOpts, Pubkey,
+    };
+    use solana_sdk::clock::Slot;
+
+    log_utils::setup();
     let client = DriftClient::new(
         Context::MainNet,
         RpcClient::new(mainnet_endpoint()),
@@ -170,13 +196,13 @@ async fn client_sync_subscribe_mainnet_grpc() {
     client.grpc_unsubscribe();
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn place_and_cancel_orders() {
-    let _ = env_logger::try_init();
+    log_utils::setup();
     let btc_perp = MarketId::perp(1);
     let sol_spot = MarketId::spot(1);
-
     let wallet: Wallet = test_keypair().into();
+
     let client = DriftClient::new(
         Context::DevNet,
         RpcClient::new(devnet_endpoint()),
@@ -220,9 +246,11 @@ async fn place_and_cancel_orders() {
 }
 
 #[ignore]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn place_and_take() {
+    log_utils::setup();
     let wallet: Wallet = test_keypair().into();
+
     let client = DriftClient::new(
         Context::DevNet,
         RpcClient::new(devnet_endpoint()),
@@ -252,7 +280,7 @@ async fn place_and_take() {
 
 #[tokio::test]
 async fn client_subscribe_swift_orders() {
-    let _ = env_logger::try_init();
+    log_utils::setup();
     let client = DriftClient::new(
         Context::DevNet,
         RpcClient::new(devnet_endpoint()),
@@ -278,7 +306,7 @@ async fn client_subscribe_swift_orders() {
 
 #[tokio::test]
 async fn oracle_source_mixed_precision() {
-    let _ = env_logger::try_init();
+    log_utils::setup();
     let client = DriftClient::new(
         Context::MainNet,
         RpcClient::new(mainnet_endpoint()),

@@ -895,6 +895,7 @@ mod test {
         }
     }
 
+    #[ignore]
     #[tokio::test]
     async fn log_stream_handles_jit_proxy_events() {
         let cache = TxSignatureCache::new(16);

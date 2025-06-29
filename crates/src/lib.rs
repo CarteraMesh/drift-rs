@@ -53,6 +53,10 @@ use crate::{
     },
     utils::{get_http_url, get_ws_url},
 };
+
+#[cfg(feature = "fireblocks")]
+use solana_rpc_client::rpc_client::SerializableTransaction;
+
 pub use crate::{grpc::GrpcSubscribeOpts, types::Context, wallet::Wallet};
 
 // utils
@@ -1512,17 +1516,19 @@ impl DriftClientBackend {
         tx: VersionedMessage,
         recent_block_hash: Hash,
     ) -> SdkResult<Signature> {
-        let tx = wallet.sign_tx(tx, recent_block_hash)?;
-        self.rpc_client
-            .send_transaction(&tx)
+        let default_config = RpcSendTransactionConfig {
+            preflight_commitment: Some(self.rpc_client.commitment().commitment),
+            ..RpcSendTransactionConfig::default()
+        };
+        self.sign_and_send_with_config(wallet, tx, recent_block_hash, default_config)
             .await
-            .map_err(Into::into)
     }
 
     /// Sign and send a tx to the network with custom send config
     /// allows setting commitment level, retries, etc.
     ///
     /// Returns the signature on success
+    #[cfg(not(feature = "fireblocks"))]
     pub async fn sign_and_send_with_config(
         &self,
         wallet: &Wallet,
@@ -1535,6 +1541,41 @@ impl DriftClientBackend {
             .send_transaction_with_config(&tx, config)
             .await
             .map_err(Into::into)
+    }
+
+    /// Sign and send a tx to the network with custom send config
+    /// allows setting commitment level, retries, etc.
+    ///
+    /// Returns the signature on success
+    #[cfg(feature = "fireblocks")]
+    pub async fn sign_and_send_with_config(
+        &self,
+        wallet: &Wallet,
+        mut tx: VersionedMessage,
+        recent_block_hash: Hash,
+        _config: RpcSendTransactionConfig,
+    ) -> SdkResult<Signature> {
+        use fireblocks_solana_signer::VersionedTransactionExtension;
+        tx.set_recent_blockhash(recent_block_hash);
+        let versioned_tx = VersionedTransaction::new_unsigned(tx.clone());
+        let result = self.rpc_client.simulate_transaction(&versioned_tx).await?;
+        if result.value.err.is_some() {
+            return Err(result.value.into());
+        }
+        // Fireblocks will sign AND broadcast transaction
+        // Sanity check to determine if tx really landed
+        let tx = wallet.sign_tx(tx, recent_block_hash)?;
+        if !self
+            .rpc_client
+            .confirm_transaction(tx.get_signature())
+            .await?
+        {
+            return Err(SdkError::Generic(format!(
+                "Unable to confirm tx {}",
+                tx.get_signature()
+            )));
+        }
+        Ok(*tx.get_signature())
     }
 
     /// Fetch the live oracle price for `market`
@@ -3207,6 +3248,8 @@ pub fn build_accounts<'a>(
 mod tests {
     use std::str::FromStr;
 
+    #[cfg(feature = "fireblocks")]
+    use fireblocks_solana_signer::FireblocksSigner as Keypair;
     use serde_json::json;
     use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
     use solana_rpc_client::rpc_client::Mocks;
@@ -3214,7 +3257,9 @@ mod tests {
         request::RpcRequest,
         response::{Response, RpcResponseContext},
     };
+    #[cfg(not(feature = "fireblocks"))]
     use solana_sdk::signature::Keypair;
+
     use types::accounts::PerpMarket;
 
     use super::*;

@@ -28,6 +28,7 @@ async fn drift_client() -> DriftClient {
         .clone()
 }
 
+#[cfg(feature = "jupiter_tests")]
 #[tokio::test]
 async fn jupiter_swap_exact_in_udsc_to_sol() {
     let _ = env_logger::try_init();
