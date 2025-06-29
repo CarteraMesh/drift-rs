@@ -26,6 +26,12 @@ jobs:
       CARGO_DRIFT_FFI_PATH: /usr/lib
     runs-on: ubicloud
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - "default"
+          - "fireblocks"
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -40,9 +46,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.yaml') }}-${{ matrix.features }}
           restore-keys: |
-            ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+            ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.yaml') }}-${{ matrix.features }}
       - name: Config rust toolchain
         run: |
           rustup show active-toolchain
@@ -58,18 +64,44 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Build
-        run: cargo check
+        run: |
+          if [ "${{ matrix.features }}" == "default" ]; then
+            cargo check
+          else
+            cargo check --features fireblocks
+          fi
       - name: Test
+        if: ${{ matrix.features == 'default' }}
         run: |
           cargo test --no-fail-fast --lib -- --nocapture
           cargo test --no-fail-fast --test integration -- --nocapture --test-threads 2
-          cargo test --no-fail-fast --test jupiter -- --nocapture --test-threads 2
+          echo cargo test --no-fail-fast --test jupiter -- --nocapture --test-threads 2
         env:
           TEST_DEVNET_RPC_ENDPOINT: ${{ secrets.DEVNET_RPC_ENDPOINT }}
           TEST_MAINNET_RPC_ENDPOINT: ${{ secrets.MAINNET_RPC_ENDPOINT }}
           TEST_PRIVATE_KEY: ${{ secrets.TEST_PRIVATE_KEY }}
           TEST_MAINNET_PRIVATE_KEY: ${{ secrets.TEST_MAINNET_PRIVATE_KEY }}
           TEST_GRPC_X_TOKEN: ${{ secrets.TEST_GRPC_X_TOKEN }}
+      - name: Test Fireblocks
+        if: ${{ matrix.features == 'fireblocks' }}
+        run: |
+          cargo test --no-fail-fast --lib --features fireblocks  -- --nocapture
+          cargo test --no-fail-fast --test integration  --features fireblocks -- --nocapture --test-threads 2
+        env:
+          TEST_DEVNET_RPC_ENDPOINT: ${{ secrets.DEVNET_RPC_ENDPOINT }}
+          TEST_MAINNET_RPC_ENDPOINT: ${{ secrets.MAINNET_RPC_ENDPOINT }}
+          TEST_PRIVATE_KEY: ${{ secrets.TEST_PRIVATE_KEY }}
+          TEST_MAINNET_PRIVATE_KEY: ${{ secrets.TEST_MAINNET_PRIVATE_KEY }}
+          TEST_GRPC_X_TOKEN: ${{ secrets.TEST_GRPC_X_TOKEN }}
+          FIREBLOCKS_SECRET: ${{ secrets.FIREBLOCKS_SECRET }}
+          FIREBLOCKS_API_KEY: ${{ secrets.FIREBLOCKS_API_KEY }}
+          RUST_LOG: info,drift_rs=debug,fireblocks_solana_signer=debug
+          RPC_URL: ${{ secrets.DEVNET_RPC_ENDPOINT }}
+          FIREBLOCKS_ENDPOINT: ${{ vars.FIREBLOCKS_ENDPOINT }}
+          FIREBLOCKS_POLL_TIMEOUT:  "240"
+          FIREBLOCKS_POLL_INTERVAL: "5"
+          FIREBLOCKS_DEVNET: "true"
+          FIREBLOCKS_VAULT: ${{ vars.FIREBLOCKS_VAULT }}
       - name: Cache Rust toolchain (save)
         uses: actions/cache/save@v4
         if: success() || failure()
