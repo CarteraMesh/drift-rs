@@ -4,3 +4,5 @@ target
 /vendor
 **/*/build
 .vscode
+Cargo.lock
+.nvim.lua
