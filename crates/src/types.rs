@@ -299,6 +299,8 @@ impl NewOrder {
 pub enum SdkError {
     #[error("{0}")]
     Rpc(#[from] Box<solana_rpc_client_api::client_error::Error>),
+    #[error("{0} Logs: {1}")]
+    Simulate(solana_sdk::transaction::TransactionError, String),
     #[error("{0}")]
     Ws(#[from] Box<drift_pubsub_client::PubsubClientError>),
     #[error("{0}")]
@@ -367,6 +369,20 @@ impl From<solana_rpc_client_api::client_error::Error> for SdkError {
         SdkError::Rpc(Box::new(e))
     }
 }
+
+type SimulateError = solana_rpc_client_api::response::RpcSimulateTransactionResult;
+impl From<SimulateError> for SdkError {
+    fn from(e: SimulateError) -> Self {
+        SdkError::Simulate(
+            // In case error is none, return a error so we don't panic.
+            // This should not happen in reality
+            e.err
+                .unwrap_or(solana_sdk::transaction::TransactionError::UnsupportedVersion),
+            e.logs.unwrap_or_default().join("\n"),
+        )
+    }
+}
+
 impl From<drift_pubsub_client::PubsubClientError> for SdkError {
     fn from(e: drift_pubsub_client::PubsubClientError) -> Self {
         SdkError::Ws(Box::new(e))

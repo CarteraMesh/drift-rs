@@ -3,10 +3,14 @@
 use anchor_lang::Discriminator;
 use base64::Engine;
 use bytemuck::{bytes_of, Pod, Zeroable};
+#[cfg(feature = "fireblocks")]
+use fireblocks_solana_signer::FireblocksSigner as Keypair;
 use serde_json::json;
+#[cfg(not(feature = "fireblocks"))]
+use solana_sdk::signature::Keypair;
 use solana_sdk::{
     account::Account, address_lookup_table::AddressLookupTableAccount, bs58,
-    instruction::Instruction, pubkey::Pubkey, signature::Keypair,
+    instruction::Instruction, pubkey::Pubkey,
 };
 
 use crate::{
@@ -155,6 +159,10 @@ pub fn derive_pyth_lazer_oracle_public_key(feed_id: u32) -> Pubkey {
 
 pub mod test_envs {
     //! test env vars
+    //!
+    #[cfg(feature = "fireblocks")]
+    use fireblocks_solana_signer::FireblocksSigner as Keypair;
+    #[cfg(not(feature = "fireblocks"))]
     use solana_sdk::signature::Keypair;
 
     /// solana mainnet endpoint
@@ -167,10 +175,18 @@ pub mod test_envs {
             .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string())
     }
     /// keypair for integration tests
+    #[cfg(not(feature = "fireblocks"))]
     pub fn test_keypair() -> Keypair {
         let private_key = std::env::var("TEST_PRIVATE_KEY").expect("TEST_PRIVATE_KEY set");
         Keypair::from_base58_string(private_key.as_str())
     }
+
+    #[cfg(feature = "fireblocks")]
+    pub fn test_keypair() -> Keypair {
+        fireblocks_solana_signer::FireblocksSigner::try_from_env(None)
+            .expect("Fireblocks ENV not set")
+    }
+
     /// keypair for mainnet integration tests
     pub fn mainnet_test_keypair() -> Keypair {
         let private_key =

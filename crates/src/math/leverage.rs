@@ -241,6 +241,9 @@ mod tests {
 
 #[cfg(feature = "rpc_tests")]
 mod rpc_tests {
+    #[cfg(feature = "fireblocks")]
+    use fireblocks_solana_signer::FireblocksSigner as Keypair;
+    #[cfg(not(feature = "fireblocks"))]
     use solana_sdk::signature::Keypair;
 
     use super::*;
